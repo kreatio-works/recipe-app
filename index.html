@@ -242,7 +242,7 @@ function viewList(){
     '<div class="wrap">'+
     (all.length?'<input class="search" id="q" type="search" placeholder="料理名・材料でさがす" aria-label="さがす" value="'+esc(state.q)+'">'+
       '<div class="chips" id="chips"></div><div class="list" id="list"></div>'
-    :'<div class="empty"><h2>まだレシピがありません</h2>「レシピ抜き出し」ボタンでコピーした文字を貼り付けるだけで追加できます。</div>')+
+    :'<div class="empty"><h2>まだレシピがありません</h2>「レシピ抜き出し」でコピーした文字を貼り付けるだけで追加できます。<br><a href="shortcut.html">iPhoneで抜き出せるようにする</a></div>')+
     '</div><button class="fab" data-act="new">＋ 追加</button>';
   if(all.length){paintList();$('#q').addEventListener('input',function(e){state.q=e.target.value;paintList();});}
 }
@@ -354,7 +354,8 @@ function viewData(){
     '<div class="row"><button class="btn primary" data-act="export">ファイルに書き出す</button></div>'+
     '<div class="row"><button class="btn" data-act="import">ファイルから読み込む</button></div>'+
     '<input id="imp" type="file" accept=".json,application/json" hidden>'+
-    '<p class="meta">読み込みは今のレシピに足されます。同じレシピは新しい内容で上書きされます。</p></div>';
+    '<p class="meta">読み込みは今のレシピに足されます。同じレシピは新しい内容で上書きされます。</p>'+
+    '<h2 class="sec">レシピの取り込み</h2><p><a href="shortcut.html">iPhoneで抜き出せるようにする設定</a></p></div>';
   $('#imp').addEventListener('change',function(e){
     var f=e.target.files[0];if(!f)return;
     var rd=new FileReader();

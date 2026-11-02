@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>レシピ抜き出しの設定</title>
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{--bg:#fbf6ee;--card:#fffdf9;--ink:#2b2520;--sub:#6f655a;--line:#e6dccd;--accent:#b8501c;--accent-ink:#fff;--soft:#f5e7d8;--ok:#2f7a4a;--warn:#8a5a00;--warn-soft:#fbf0d3;
+--sans:"Hiragino Sans","Noto Sans JP","Yu Gothic UI","Meiryo UI",sans-serif;--mincho:"Hiragino Mincho ProN","Noto Serif JP","Yu Mincho",serif}
+@media (prefers-color-scheme:dark){:root{--bg:#1d1a16;--card:#27231e;--ink:#f1eae0;--sub:#b3a898;--line:#3d372f;--accent:#e98a54;--accent-ink:#231305;--soft:#3a2c20;--ok:#7fd19c;--warn:#e8c26e;--warn-soft:#3a2f17}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.7;font-size:16px}
+main{max-width:680px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom))}
+a{color:var(--accent)}
+h1{font-family:var(--mincho);font-size:24px;line-height:1.35;margin:8px 0 6px}
+.lead{color:var(--sub);margin:0 0 20px}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+h2{font-size:16px;margin:0 0 8px;color:var(--accent)}
+ol{margin:0;padding-left:1.4em}li{margin:6px 0}
+b.ui{background:var(--soft);border-radius:5px;padding:0 5px;font-weight:600}
+.btn{display:flex;align-items:center;justify-content:center;width:100%;min-height:52px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-ink);font:inherit;font-weight:700;margin:10px 0 4px;cursor:pointer}
+#st{min-height:1.5em;font-weight:600;color:var(--ok);font-size:14px}
+textarea{width:100%;height:84px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--sub);font:12px/1.4 monospace;padding:8px}
+.note{color:var(--sub);font-size:14px}
+.warn{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:14px;margin-top:10px}
+</style></head><body><main>
+<a href="./index.html">‹ レシピアプリへ</a>
+<h1>レシピ抜き出しの設定</h1>
+<p class="lead">Safariで見ているレシピを、共有ボタンから抜き出してコピーできるようにします。最初に1回だけ、iPhoneのショートカットを作ります。</p>
+
+<section><h2>1. スクリプトを許可する</h2>
+<p style="margin:0">iPhoneの<b class="ui">設定</b> → <b class="ui">アプリ</b> → <b class="ui">ショートカット</b> → <b class="ui">詳細</b> と進み、<b class="ui">スクリプトの実行を許可</b>をオンにします。</p>
+<p class="note" style="margin:6px 0 0">iOSが古いときは、<b class="ui">設定</b> → <b class="ui">ショートカット</b> → <b class="ui">詳細</b> です。</p></section>
+
+<section><h2>2. 中身をコピーする</h2>
+<button class="btn" id="copy">抜き出しの中身をコピー</button>
+<div id="st" role="status"></div>
+<textarea id="code" readonly aria-label="ショートカットに貼り付ける中身">(function(){
+/* 開いているレシピページから、料理名・材料・作り方だけを抜き出してコピーする。外部へは何も送らない */
+var ING_MAX=80,STEP_MAX=50;
+function norm(s){return String(s==null?&#x27;&#x27;:s).replace(/[\s　]+/g,&#x27; &#x27;).trim();}
+function plain(s){
+  s=String(s==null?&#x27;&#x27;:s);
+  if(/[&lt;&amp;]/.test(s)){
+    try{s=new DOMParser().parseFromString(s,&#x27;text/html&#x27;).body.textContent;}
+    catch(e){s=s.replace(/&lt;[^&gt;]*&gt;/g,&#x27; &#x27;);}
+  }
+  return norm(s);
+}
+function asList(x){return x==null?[]:(Array.isArray(x)?x:[x]);}
+
+/* ---------- 1. 構造化データ（JSON-LD） ---------- */
+function isRecipe(o){return asList(o[&#x27;@type&#x27;]).some(function(t){return /(^|\/)Recipe$/i.test(String(t));});}
+function walk(o,out,depth){
+  if(!o||typeof o!==&#x27;object&#x27;||depth&gt;6)return;
+  if(Array.isArray(o)){o.forEach(function(x){walk(x,out,depth+1);});return;}
+  if(isRecipe(o))out.push(o);
+  [&#x27;@graph&#x27;,&#x27;mainEntity&#x27;,&#x27;mainEntityOfPage&#x27;,&#x27;itemListElement&#x27;,&#x27;item&#x27;].forEach(function(k){if(o[k])walk(o[k],out,depth+1);});
+}
+function ldSteps(x,out){
+  if(!x)return;
+  if(typeof x===&#x27;string&#x27;){
+    x.split(/\r?\n|&lt;br\s*\/?&gt;|&lt;\/(?:p|li)&gt;/i).forEach(function(l){l=plain(l);if(l)out.push(l);});
+    return;
+  }
+  if(Array.isArray(x)){x.forEach(function(y){ldSteps(y,out);});return;}
+  if(typeof x!==&#x27;object&#x27;)return;
+  var type=asList(x[&#x27;@type&#x27;]).join(&#x27; &#x27;);
+  if(/HowToSection/i.test(type)){
+    var h=plain(x.name);if(h)out.push({h:h});
+    ldSteps(x.itemListElement||x.steps,out);
+    return;
+  }
+  if(x.text||x.description){ldSteps(String(x.text||x.description),out);return;}
+  if(x.itemListElement){ldSteps(x.itemListElement,out);return;}
+  if(x.name)ldSteps(String(x.name),out);
+}
+function isoTime(s){
+  var m=/^P(?:\d+D)?T?(?:(\d+)H)?(?:(\d+)M)?/.exec(String(s||&#x27;&#x27;));
+  if(!m||(!m[1]&amp;&amp;!m[2]))return &#x27;&#x27;;
+  return (m[1]?m[1]+&#x27;時間&#x27;:&#x27;&#x27;)+(m[2]?m[2]+&#x27;分&#x27;:&#x27;&#x27;);
+}
+function fromLd(){
+  var found=[];
+  [].forEach.call(document.querySelectorAll(&#x27;script[type*=&quot;ld+json&quot;]&#x27;),function(s){
+    var t=s.textContent||&#x27;&#x27;;
+    try{walk(JSON.parse(t),found,0);}
+    catch(e){try{walk(JSON.parse(t.replace(/[\u0000-\u001f]+/g,&#x27; &#x27;)),found,0);}catch(e2){}}
+  });
+  var best=null,bestN=-1;
+  found.forEach(function(o){
+    var n=asList(o.recipeIngredient||o.ingredients).length;
+    if(n&gt;bestN){best=o;bestN=n;}
+  });
+  if(!best)return null;
+  var steps=[];ldSteps(best.recipeInstructions,steps);
+  var y=asList(best.recipeYield)[0];
+  y=y==null?&#x27;&#x27;:plain(y);
+  y=y.replace(/^(\d+)\s*(\(?\s*servings?\s*\)?)?$/i,&#x27;$1人分&#x27;);
+  return {
+    title:plain(best.name),
+    yield_:y,
+    time:isoTime(best.totalTime||best.cookTime),
+    ing:asList(best.recipeIngredient||best.ingredients).map(plain).filter(Boolean),
+    steps:steps
+  };
+}
+
+/* ---------- 2. 画面から探す ---------- */
+function vis(e){return !!e&amp;&amp;e.getClientRects().length&gt;0;}
+function txt(e){return norm(e.innerText||e.textContent||&#x27;&#x27;);}
+var NOISE=/^(買い物|かいもの|カゴ|カート|リストに追加|追加する|保存|印刷|シェア|広告|PR$|もっと見る|閉じる|人数を?変更)/;
+var NOISE2=/(に戻る|ページトップ|スポンサーリンク|動画を.*(見|youtube|チェック))/i;
+function outside(e){return !e.closest(&#x27;#rcp-panel&#x27;);}
+function rowsOf(box){
+  function pick(list,fn){
+    var r=[];
+    [].forEach.call(list,function(e){
+      if(!vis(e)||!outside(e))return;
+      var t=fn?fn(e):txt(e);
+      if(t&amp;&amp;!NOISE.test(t)&amp;&amp;!(t.length&lt;60&amp;&amp;NOISE2.test(t)))r.push(t);
+    });
+    return r;
+  }
+  /* 箇条書き・表・段落のうち、文字量がいちばん多いものを本体とみなす */
+  var lis=[].filter.call(box.querySelectorAll(&#x27;li&#x27;),function(e){return !e.querySelector(&#x27;li&#x27;);});
+  var kinds=[pick(lis),pick(box.querySelectorAll(&#x27;tr&#x27;)),
+    pick(box.querySelectorAll(&#x27;dt&#x27;),function(e){var d=e.nextElementSibling;return norm(txt(e)+&#x27; &#x27;+(d&amp;&amp;d.tagName===&#x27;DD&#x27;?txt(d):&#x27;&#x27;));}),
+    pick(box.querySelectorAll(&#x27;p&#x27;))];
+  var best=[],bestLen=0;
+  kinds.forEach(function(r){var n=r.join(&#x27;&#x27;).length;if(n&gt;bestLen){best=r;bestLen=n;}});
+  return best.length?best:pick(box.children);
+}
+/* 「肉じゃがの材料 (3〜4人分)」のように前に語が付く見出しも拾う */
+var RE_ING=/^[■□●○◆◇▼▽★☆【\[〈《&lt;＜]?\s*(.{0,30}の)?(材\s*料|食\s*材|使う材料|ingredients?)\s*([】\]〉》&gt;＞]\s*)?([（(：:].*|\d.*(人|個|枚|本|分).*)?$/i;
+var RE_STEP=/^[■□●○◆◇▼▽★☆【\[〈《&lt;＜]?\s*(.{0,30}の)?(作り方|つくり方|作りかた|つくりかた|調理手順|手順|工程|directions?|instructions?|method)\s*([】\]〉》&gt;＞]\s*)?([（(：:].*)?$/i;
+function headings(re){
+  var out=[];
+  [].forEach.call(document.querySelectorAll(&#x27;h1,h2,h3,h4,h5,h6,dt,th,strong,b,p,div,span,summary,button&#x27;),function(e){
+    var c=e.textContent||&#x27;&#x27;;
+    if(c.length&gt;45||!c.trim()||!vis(e)||!outside(e))return;
+    if(e.closest(&#x27;a,nav,footer,aside&#x27;))return;
+    if(re.test(norm(c)))out.push(e);
+  });
+  return out;
+}
+/* 見出しの後ろにある一覧を探す。other は次の区切りになる見出し */
+function rank(e){var m=/^H([1-6])$/.exec(e.tagName);return m?+m[1]:0;}
+function listAfter(h,other,min,max){
+  var cur=h,hr=rank(h)||3;
+  for(var up=0;up&lt;6&amp;&amp;cur&amp;&amp;cur!==document.body;up++){
+    /* 2列に分かれた一覧などもあるので、次の見出しまでの兄弟要素をまとめて読む */
+    var got=[],sib=cur.nextElementSibling;
+    for(var n=0;sib&amp;&amp;n&lt;12;n++,sib=sib.nextElementSibling){
+      if(!vis(sib))continue;
+      var rk=rank(sib);
+      if(rk&amp;&amp;rk&lt;=hr)break;
+      var first=sib.querySelector(&#x27;h1,h2,h3,h4,h5,h6&#x27;);
+      if(other.test(txt(rk?sib:(first||sib)).slice(0,45)))break;
+      if(rk)continue;
+      got=got.concat(rowsOf(sib));
+    }
+    if(got.length&gt;=min)return got.length&lt;=max?got:null;
+    cur=cur.parentElement;
+  }
+  return null;
+}
+function byHeading(re,other,min,max){
+  var hs=headings(re);
+  for(var i=0;i&lt;hs.length;i++){
+    var r=listAfter(hs[i],other,min,max);
+    if(r)return r;
+  }
+  return null;
+}
+function byAttr(sel,min,max){
+  var cands=[].filter.call(document.querySelectorAll(sel),function(e){return vis(e)&amp;&amp;outside(e)&amp;&amp;!e.closest(&#x27;nav,footer,aside&#x27;);});
+  var best=null;
+  cands.forEach(function(e){
+    var r=rowsOf(e);
+    if(r.length&gt;=min&amp;&amp;r.length&lt;=max&amp;&amp;(!best||r.length&gt;best.length))best=r;
+  });
+  if(best)return best;
+  /* 1行ずつに同じ class が付いているサイト */
+  var outer=cands.filter(function(e){return !cands.some(function(o){return o!==e&amp;&amp;o.contains(e);});}).map(txt).filter(Boolean);
+  return outer.length&gt;=min&amp;&amp;outer.length&lt;=max?outer:null;
+}
+function cleanStep(s){
+  return norm(s).replace(/\*\*/g,&#x27;&#x27;).replace(/^(?:step|ステップ|手順|工程)?\s*[0-9０-９]+\s*[.．、:：)）]?\s+/i,&#x27;&#x27;).replace(/^[（(][0-9０-９]+[)）]\s*/,&#x27;&#x27;).replace(/^[①-⑳]\s*/,&#x27;&#x27;);
+}
+function fromDom(){
+  var ing=byAttr(&#x27;[itemprop=&quot;recipeIngredient&quot;],[itemprop=&quot;ingredients&quot;]&#x27;,1,ING_MAX)
+    ||byHeading(RE_ING,RE_STEP,2,ING_MAX)
+    ||byAttr(&#x27;[class*=&quot;ingredient&quot; i],[id*=&quot;ingredient&quot; i],[class*=&quot;zairyo&quot; i],[id*=&quot;zairyo&quot; i]&#x27;,2,ING_MAX);
+  var st=byAttr(&#x27;[itemprop=&quot;recipeInstructions&quot;]&#x27;,1,STEP_MAX)
+    ||byHeading(RE_STEP,/^$/,1,STEP_MAX)
+    ||byAttr(&#x27;#steps,[class*=&quot;instruction&quot; i],[id*=&quot;instruction&quot; i],[class*=&quot;direction&quot; i],[class*=&quot;howto&quot; i],[class*=&quot;how-to&quot; i],[class*=&quot;tsukurikata&quot; i],[class*=&quot;recipe-step&quot; i],[class*=&quot;recipeStep&quot; i]&#x27;,1,STEP_MAX);
+  return {ing:ing||[],steps:st||[]};
+}
+
+/* ---------- 3. まとめる ---------- */
+var ld=fromLd(),method=&#x27;&#x27;,R={title:&#x27;&#x27;,yield_:&#x27;&#x27;,time:&#x27;&#x27;,ing:[],steps:[]},warn=&#x27;&#x27;;
+var pageText=norm(document.body.innerText||&#x27;&#x27;).replace(/ /g,&#x27;&#x27;);
+/* ページ内移動のサイトでは、古いレシピのデータが残っていることがある */
+var ldFresh=!!ld&amp;&amp;(!ld.title||pageText.indexOf(ld.title.replace(/ /g,&#x27;&#x27;))&gt;=0);
+if(ld&amp;&amp;ldFresh){R=ld;method=&#x27;構造化データ&#x27;;}
+if(!R.ing.length||!R.steps.length){
+  var dom=fromDom();
+  if(!R.ing.length&amp;&amp;dom.ing.length){R.ing=dom.ing;method=method?method+&#x27;＋画面&#x27;:&#x27;画面&#x27;;}
+  if(!R.steps.length&amp;&amp;dom.steps.length){R.steps=dom.steps;if(method.indexOf(&#x27;画面&#x27;)&lt;0)method=method?method+&#x27;＋画面&#x27;:&#x27;画面&#x27;;}
+}
+if(!R.ing.length&amp;&amp;!R.steps.length&amp;&amp;ld){R=ld;method=&#x27;構造化データ&#x27;;warn=&#x27;このページのものか確かめてください（別のレシピのデータの可能性があります）&#x27;;}
+if(!R.title){var h1=document.querySelector(&#x27;h1&#x27;);R.title=h1?txt(h1):norm(document.title);}
+R.steps=R.steps.map(function(x){return typeof x===&#x27;string&#x27;?cleanStep(x):x;}).filter(Boolean);
+R.ing=R.ing.map(function(x){return norm(x).replace(/^[・･]+\s*/,&#x27;&#x27;);}).filter(Boolean);
+/* 材料の先頭に「3人分」だけの行があるサイトは分量へ移す */
+if(R.ing.length&amp;&amp;/^[0-9０-９〜～~-]+\s*(人分|人前|個分|枚分|本分)$/.test(R.ing[0])){if(!R.yield_)R.yield_=R.ing[0];R.ing.shift();}
+if(!R.ing.length&amp;&amp;R.steps.length)warn=&#x27;材料が見つかりませんでした。&#x27;;
+if(R.ing.length&amp;&amp;!R.steps.length)warn=&#x27;作り方が見つかりませんでした。&#x27;;
+
+function ingText(){return R.ing.map(function(x){return &#x27;・&#x27;+x;}).join(&#x27;\r\n&#x27;);}
+function stepText(){
+  var n=0;
+  return R.steps.map(function(x){
+    if(typeof x===&#x27;object&#x27;)return &#x27;〈&#x27;+x.h+&#x27;〉&#x27;;
+    n++;return n+&#x27;. &#x27;+x;
+  }).join(&#x27;\r\n&#x27;);
+}
+function allText(){
+  var sub=[R.yield_,R.time].filter(Boolean).join(&#x27;・&#x27;);
+  var o=[R.title+(sub?&#x27;（&#x27;+sub+&#x27;）&#x27;:&#x27;&#x27;)];
+  if(R.ing.length)o.push(&#x27;&#x27;,&#x27;■材料&#x27;,ingText());
+  if(R.steps.length)o.push(&#x27;&#x27;,&#x27;■作り方&#x27;,stepText());
+  o.push(&#x27;&#x27;,&#x27;出典：&#x27;+location.href);
+  return o.join(&#x27;\r\n&#x27;);
+}
+
+/* ---------- 4. 画面 ---------- */
+var old=document.getElementById(&#x27;rcp-panel&#x27;);if(old)old.remove();
+var P=document.createElement(&#x27;div&#x27;);P.id=&#x27;rcp-panel&#x27;;P.setAttribute(&#x27;data-method&#x27;,method);
+P.style.cssText=&#x27;position:fixed;top:12px;right:12px;z-index:2147483647;background:#fff;color:#222;border:2px solid #c55a11;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.35);padding:12px 14px;width:560px;max-width:92vw;font:13px &quot;Meiryo UI&quot;,sans-serif;text-align:left;line-height:1.5&#x27;;
+P.style.maxHeight=&#x27;calc(100dvh - 24px)&#x27;;P.style.overflow=&#x27;auto&#x27;;P.style.boxSizing=&#x27;border-box&#x27;;
+/* スマホでは横に広いページだと右端基準ではみ出すので、見えている幅に合わせる */
+var cw=document.documentElement.clientWidth;
+if(cw&lt;700){P.style.left=&#x27;8px&#x27;;P.style.right=&#x27;auto&#x27;;P.style.top=&#x27;8px&#x27;;P.style.maxWidth=&#x27;none&#x27;;P.style.width=(cw-16)+&#x27;px&#x27;;}
+function el(tag,css,t){var e=document.createElement(tag);if(css)e.style.cssText=css;if(t!=null)e.textContent=t;return e;}
+P.appendChild(el(&#x27;div&#x27;,&#x27;font-weight:bold;font-size:15px;color:#843c0c;margin-bottom:6px&#x27;,
+  R.ing.length||R.steps.length?&#x27;レシピ（材料 &#x27;+R.ing.length+&#x27;品・工程 &#x27;+R.steps.filter(function(x){return typeof x===&#x27;string&#x27;;}).length+&#x27;）&#x27;:&#x27;レシピが見つかりません&#x27;));
+var st=el(&#x27;div&#x27;,&#x27;font-weight:bold;margin:6px 0;min-height:1.2em&#x27;);
+var bar=el(&#x27;div&#x27;,&#x27;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end&#x27;);
+var ta=null;
+function say(ok,msg){st.textContent=msg;st.style.color=ok?&#x27;#2e7d32&#x27;:&#x27;#c00&#x27;;}
+function copy(s,label){
+  var done=function(){say(true,&#x27;✔ &#x27;+label+&#x27;をコピーしました&#x27;);};
+  var fail=function(){say(false,&#x27;自動でコピーできませんでした。文字を選んで Ctrl+C してください&#x27;);};
+  function legacy(){
+    var t=el(&#x27;textarea&#x27;,&#x27;position:fixed;left:-9999px;top:0;font-size:16px&#x27;);t.value=s;P.appendChild(t);t.focus();t.select();t.setSelectionRange(0,s.length);
+    var ok=false;try{ok=document.execCommand(&#x27;copy&#x27;);}catch(e){}
+    t.remove();
+    if(ok)done();else fail();
+  }
+  if(navigator.clipboard&amp;&amp;window.isSecureContext)navigator.clipboard.writeText(s).then(done,legacy);
+  else legacy();
+}
+function btn(label,bg,fn){var b=el(&#x27;button&#x27;,&#x27;padding:6px 14px;border:0;border-radius:4px;color:#fff;font-weight:bold;cursor:pointer;font-size:13px;background:&#x27;+bg,label);b.onclick=fn;bar.appendChild(b);}
+if(R.ing.length||R.steps.length){
+  ta=el(&#x27;textarea&#x27;,&#x27;width:100%;box-sizing:border-box;height:min(55vh,420px);padding:8px;border:1px solid #bbb;border-radius:4px;font:16px/1.6 &quot;Meiryo UI&quot;,sans-serif;color:#000;background:#fff;resize:vertical&#x27;);
+  ta.value=allText();P.appendChild(ta);
+  P.appendChild(st);
+  if(warn)P.appendChild(el(&#x27;div&#x27;,&#x27;color:#8a5a00;background:#fff4d6;padding:4px 8px;border-radius:4px;margin-bottom:8px&#x27;,warn));
+  btn(&#x27;全部コピー&#x27;,&#x27;#c55a11&#x27;,function(){copy(ta.value,&#x27;全部&#x27;);});
+  if(R.ing.length)btn(&#x27;材料だけ&#x27;,&#x27;#548235&#x27;,function(){copy(R.ing.join(&#x27;\r\n&#x27;),&#x27;材料&#x27;);});
+  if(R.steps.length)btn(&#x27;作り方だけ&#x27;,&#x27;#2e75b6&#x27;,function(){copy(stepText(),&#x27;作り方&#x27;);});
+}else{
+  P.appendChild(el(&#x27;div&#x27;,&#x27;margin-bottom:8px&#x27;,&#x27;このページから材料・作り方を見つけられませんでした。レシピ本文のページで押してください。&#x27;));
+}
+btn(&#x27;閉じる&#x27;,&#x27;#7f7f7f&#x27;,function(){P.remove();});
+P.appendChild(bar);
+document.body.appendChild(P);
+/* iPhoneのショートカットから動かしたときは completion が渡される。コピーはショートカット側の次の動作が行う */
+if(typeof completion===&#x27;function&#x27;){
+  if(ta)say(true,&#x27;✔ コピーしました。ホーム画面のレシピアプリで「＋追加」→「コピーした文字を読み込む」&#x27;);
+  completion(ta?allText():&#x27;&#x27;);
+}else if(ta)copy(allText(),&#x27;全部&#x27;);
+})();
+</textarea></section>
+
+<section><h2>3. ショートカットを作る</h2>
+<ol>
+<li><b class="ui">ショートカット</b>アプリを開き、右上の<b class="ui">＋</b>を押す</li>
+<li>検索欄に <b>JavaScript</b> と入れて、<b class="ui">WebページでJavaScriptを実行</b>を選ぶ</li>
+<li>入っている例の文字を全部消して、長押しで<b class="ui">ペースト</b>する（2. でコピーした中身）</li>
+<li>検索欄に <b>クリップボード</b> と入れて、<b class="ui">クリップボードにコピー</b>を選ぶ（中身は前の動作の結果のまま）</li>
+<li>上の名前を<b>レシピ抜き出し</b>にする</li>
+<li>名前の横のメニューか<b class="ui">ⓘ</b>から<b class="ui">共有シートに表示</b>をオンにして、受け取るものを<b class="ui">Safari Webページ</b>だけにする</li>
+<li><b class="ui">完了</b>を押す</li>
+</ol>
+<p class="note" style="margin:8px 0 0">iOSのバージョンによって、ボタンの名前や場所が少し違うことがあります。</p></section>
+
+<section><h2>4. 使い方</h2>
+<ol>
+<li>Safariでレシピのページを開き、<b class="ui">共有ボタン</b> → <b class="ui">レシピ抜き出し</b>を押す</li>
+<li>初めてのサイトでは許可を聞かれるので、<b class="ui">許可</b>を押す</li>
+<li>ページの上に内容が出て、全部がコピーされます。材料だけ欲しいときは、そこで<b class="ui">材料だけ</b>を押す</li>
+<li>ホーム画面のレシピアプリで<b class="ui">＋追加</b> → <b class="ui">コピーした文字を読み込む</b> → <b class="ui">保存</b></li>
+</ol>
+<div class="warn">共有シートに出ないときは、一覧のいちばん下の<b>アクションを編集</b>から追加できます。</div></section>
+</main>
+<script>
+document.getElementById('copy').addEventListener('click',function(){
+  var t=document.getElementById('code'),st=document.getElementById('st');
+  function ok(){st.textContent='✔ コピーしました。続けて 3. に進んでください';}
+  function legacy(){t.focus();t.select();t.setSelectionRange(0,t.value.length);
+    var r=false;try{r=document.execCommand('copy');}catch(e){}
+    if(r)ok();else st.textContent='コピーできませんでした。下の文字を長押しして全部選択し、コピーしてください';}
+  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(t.value).then(ok,legacy);else legacy();
+});
+</script>
+</body></html>

@@ -65,6 +65,31 @@ h2.sec{font-size:15px;color:var(--accent);margin:24px 0 8px;letter-spacing:.08em
 .steps .n{flex:none;width:30px;height:30px;border-radius:50%;background:var(--soft);color:var(--accent);font-weight:700;display:flex;align-items:center;justify-content:center;font-size:15px;margin-top:2px}
 .steps .h{font-weight:700;color:var(--sub);font-size:15px}
 .memo{white-space:pre-wrap;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+/* 目印（☆・Aなど） */
+.mk{display:inline-flex;align-items:center;justify-content:center;min-width:1.5em;height:1.5em;padding:0 .35em;margin:0 .15em;border-radius:.4em;background:var(--soft);color:var(--accent);font-weight:700;font-size:.9em;line-height:1;white-space:nowrap}
+.ing .mk{margin:0 .45em 0 0}
+.ing li.ing-group{display:flex;align-items:center;min-height:40px;padding:6px 14px;background:var(--soft);font-weight:700;font-size:14px}
+.ing li.ing-group .mk{background:var(--card)}
+.ing li.in-group label{padding-left:26px}
+.st-body{flex:1;min-width:0}
+.refs{margin-top:8px;padding:8px 12px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:15px;line-height:1.6}
+.ref{display:flex;gap:8px;align-items:flex-start}
+.ref+.ref{margin-top:6px}
+.ref.named{display:block}
+.ref .mk{margin:.1em 0 0;flex:none}
+.ref-list{min-width:0}
+.cook .refs{font-size:calc(18px * var(--scale,1));margin-top:14px}
+/* 分量の変更 */
+.ing-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:24px 0 8px}
+.ing-top h2.sec{margin:0}
+.serv{display:flex;align-items:center;gap:4px}
+.serv button{width:44px;height:44px;border:1px solid var(--line);border-radius:50%;background:var(--card);font-size:20px;line-height:1}
+.serv button:active{background:var(--soft)}
+.serv button:disabled{opacity:.4}
+.serv b{min-width:4.6em;text-align:center}
+.serv-note{display:flex;align-items:center;gap:10px;color:var(--sub);font-size:13px;line-height:1.5;margin:0 0 10px}
+.serv-note span{flex:1;min-width:0}
+b.amt{color:var(--accent)}
 .bottombar{position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 24%);padding:20px 16px calc(14px + env(safe-area-inset-bottom));display:flex}
 .wake{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border-radius:18px;border:1px solid var(--line);background:transparent;font-size:13px;font-weight:600;white-space:nowrap;color:var(--sub)}
 .wake::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--sub)}
@@ -137,7 +162,8 @@ function parseRecipe(text){
     if(/^(.{0,30}の)?(作り方|つくり方|作りかた|手順|工程|directions?|instructions?)$/i.test(bare)){mode='step';return;}
     if(/^(メモ|ポイント|コツ)$/.test(bare)){mode='memo';return;}
     if(mode==='head'){head.push(l);}
-    else if(mode==='ing'){var i=l.replace(/^[・･\-*●•]\s*/,'');if(i)r.ingredients.push(i);}
+    /* ●は目印のこともあるので残す。全行についているだけなら表示のときに無視する */
+    else if(mode==='ing'){var i=l.replace(/^[・･\-*•]\s*/,'');if(i)r.ingredients.push(i);}
     else if(mode==='step'){
       var s=/^〈.*〉$/.test(l)?l:l.replace(/^(?:step\s*)?[0-9０-９]+\s*[.．、:：)）]\s*/i,'').replace(/^[（(][0-9０-９]+[)）]\s*/,'').replace(/^[①-⑳]\s*/,'');
       if(s)r.steps.push(s);
@@ -207,16 +233,204 @@ function realSteps(r){
   r.steps.forEach(function(s){if(isSection(s))sec=s.slice(1,-1);else{out.push({text:s,sec:sec});sec='';}});
   return out;
 }
+/* ---------- 目印（☆・Aなど）の読み取り。保存した文字は変えず、表示のたびに読む ---------- */
+var MARK_SYM='⭐|🌟|☆|★|✩|✪|✫|✭|✮|✯|◎|○|◯|●|◉|◇|◆|□|■|△|▲|▽|▼|♪|♫|♡|♥|❤|♦|♠|♣|＊|Ⓐ|Ⓑ|Ⓒ|Ⓓ|Ⓔ|Ⓕ';
+var VS='[\\uFE0E\\uFE0F]?',LATIN='A-Za-zＡ-Ｚａ-ｚ0-9０-９';
+var RE_MK_BOX=new RegExp('^[(（\\[［【〈《<＜]\\s*([A-FＡ-Ｆ]|'+MARK_SYM+')'+VS+'\\s*[)）\\]］】〉》>＞][\\s:：・]*(.*)$');
+var RE_MK_SYM=new RegExp('^('+MARK_SYM+')'+VS+'[\\s:：・]*(.*)$');
+var RE_MK_LET=new RegExp('^([A-FＡ-Ｆ])(?![.．'+LATIN+'])[\\s:：・]*(.*)$');
+var RE_GROUP=/^[【〈《<＜\[［]\s*(.+?)\s*[】〉》>＞\]］]$/;
+var RE_GROUP_WORD=/^(合わせ.*|.*調味料|(つけ|かけ|ごま)?(たれ|だれ|タレ|ダレ)|ソース|ドレッシング)$/;
+var RE_HAS_AMT=/[0-9０-９½¼¾⅓⅔]|少々|適量|少し|お好み|ひとつまみ/;
+function markKey(s){
+  return s.replace(/[︎️]/g,'').replace(/[Ａ-Ｆ]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0);});
+}
+/* 材料1行を {head:見出し行か, mark:目印, text:残りの文字} にする */
+function readIng(l){
+  var m=RE_MK_BOX.exec(l)||RE_MK_SYM.exec(l)||RE_MK_LET.exec(l);
+  if(m){
+    var mk=markKey(m[1]),rest=m[2].replace(/^[（(]\s*(.*?)\s*[)）]$/,'$1');
+    if(!rest)return {head:true,mark:mk,text:''};
+    if(!RE_HAS_AMT.test(rest)){
+      /* ■たれ のような見出しの書き方 */
+      if(/^[■□▼▽]$/.test(mk)){
+        var inner=readIng(rest);
+        return inner.mark?{head:true,mark:inner.mark,text:inner.text}:{head:true,mark:'',text:rest};
+      }
+      if(RE_GROUP_WORD.test(rest))return {head:true,mark:mk,text:rest};
+    }
+    return {head:false,mark:mk,text:m[2]};
+  }
+  m=RE_GROUP.exec(l);
+  if(m){
+    var g=readIng(m[1]);
+    return g.mark?{head:true,mark:g.mark,text:g.text}:{head:true,mark:'',text:m[1]};
+  }
+  return {head:false,mark:'',text:l};
+}
+function groupName(s){return s.replace(/(の材料|の調味料|用)$/,'');}
+function reEscape(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+function markRe(words){
+  if(!words.length)return null;
+  var alts=words.slice().sort(function(a,b){return b.length-a.length;}).map(function(w){
+    if(/^[A-F]$/.test(w))return w+'|'+String.fromCharCode(w.charCodeAt(0)+0xFEE0);
+    return reEscape(w)+(w.length===1?VS:'');
+  });
+  return new RegExp('(^|[^'+LATIN+'])('+alts.join('|')+')(?!['+LATIN+'])','g');
+}
+function ingInfo(r){
+  var steps=(r.steps||[]).join('\n'),cur='',heads={},count={},plain=0;
+  var rows=(r.ingredients||[]).map(function(l,i){
+    var x=readIng(l);x.i=i;x.raw=l;
+    if(x.head){cur=x.mark||groupName(x.text);heads[cur]=1;}
+    else{x.group=cur;plain++;if(x.mark)count[x.mark]=(count[x.mark]||0)+1;}
+    return x;
+  });
+  /* 全行が同じ印（ただの箇条書き）や、手順に出てこない1行だけの印は目印として扱わない */
+  rows.forEach(function(x){
+    if(x.head||!x.mark||heads[x.mark])return;
+    var n=count[x.mark];
+    if((n===1||n===plain)&&steps.search(markRe([x.mark]))<0){x.mark='';x.text=x.raw;}
+  });
+  var groups={},alias={};
+  rows.forEach(function(x){
+    x.key=x.head?(x.mark||groupName(x.text)):(x.mark||x.group||'');
+    x.inGroup=!x.head&&!x.mark&&!!x.group;
+    if(x.head&&x.mark&&x.text)alias[groupName(x.text)]=x.mark;
+    if(!x.head&&x.key)(groups[x.key]=groups[x.key]||[]).push(x);
+  });
+  /* 名前だけのまとまりは2文字以上のときだけ手順から探す */
+  var words=Object.keys(groups).concat(Object.keys(alias)).filter(function(k){return /^[^ぁ-んァ-ヶ一-龠]$/.test(k)||k.length>=2;});
+  return {rows:rows,groups:groups,alias:alias,re:markRe(words)};
+}
+
+/* ---------- 分量の計算 ---------- */
+var RE_SERV=/(\d+(?:\.\d+)?)(?:\s*[〜～~\-－ー−]\s*(\d+(?:\.\d+)?))?\s*(人前|人分|人|名分|名|個分|個|枚分|枚|本分|本|台分|台|切れ分|切れ|皿分|皿|杯分|杯|食分|食|合分|合|つ分|つ|玉分|玉|斤分|斤|カップ分|カップ|ホール|袋分|袋|缶分)/;
+var MULT=[.25,.5,1,1.5,2,3,4,5];
+function normWide(s){
+  return String(s).replace(/[０-９Ａ-Ｚａ-ｚ／．＋]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0);})
+    .replace(/(\d)\s*(?=[½¼¾⅓⅔⅛])/g,'$1と')
+    .replace(/[½¼¾⅓⅔⅛]/g,function(v){return {'½':'1/2','¼':'1/4','¾':'3/4','⅓':'1/3','⅔':'2/3','⅛':'1/8'}[v];});
+}
+function servBase(r){
+  var t=normWide(r.servings||'').replace(/[一二三四五六七八九十](?=人|名)/g,function(c){return '一二三四五六七八九十'.indexOf(c)+1;});
+  var m=RE_SERV.exec(t);
+  if(!m||!(+m[1]>0))return null;
+  return {n:+m[1],hi:m[2]?+m[2]:0,unit:m[3].replace(/^(人|名|名分)$/,'人分')};
+}
+function servNow(r){var b=servBase(r);return state.serv[r.id]||(b?b.n:1);}
+function servFactor(r){var b=servBase(r);return servNow(r)/(b?b.n:1);}
+function servLabel(r){var b=servBase(r),v=servNow(r);return b?v+b.unit:frac(v)+'倍';}
+function servStep(r,dir){
+  var b=servBase(r),v=servNow(r);
+  if(b){v=dir>0?Math.floor(v)+1:Math.ceil(v)-1;v=Math.min(Math.max(b.n*5,20),Math.max(1,v));}
+  else{v=MULT[Math.min(MULT.length-1,Math.max(0,MULT.indexOf(v)+dir))];}
+  state.serv[r.id]=v;
+}
+function frac(v){
+  var w=Math.floor(v),r=v-w,C=[0,1/8,1/4,1/3,1/2,2/3,3/4,1],L=['','1/8','1/4','1/3','1/2','2/3','3/4',''],b=0;
+  C.forEach(function(c,i){if(Math.abs(c-r)<Math.abs(C[b]-r))b=i;});
+  if(b===7){w++;b=0;}
+  if(!w&&!b)b=1;
+  return w?w+(L[b]?'と'+L[b]:''):L[b];
+}
+/* 小さじに直した量を、計りやすい言い方にする */
+function spoonText(x){
+  var d=Math.floor((x+.01)/3),rem=x-d*3;
+  if(rem<.05)return '大さじ'+d;
+  if(Math.abs(rem-1.5)<.05)return d?'大さじ'+d+'と1/2':'大さじ1/2';
+  return (d?'大さじ'+d+'と':'')+'小さじ'+frac(rem);
+}
+function fmtAmt(v,u){
+  if(/^(g|グラム|mg|㎎|ml|mL|ML|㎖|cc|CC|㏄)$/.test(u))return String(v>=1000?Math.round(v/10)*10:v>=100?Math.round(v/5)*5:v>=10?Math.round(v):Math.round(v*10)/10);
+  if(/^(kg|キログラム|キロ|㎏|L|ℓ|リットル)$/.test(u))return String(Math.round(v*100)/100);
+  if(/^(cm|センチ)$/.test(u))return String(Math.max(.5,Math.round(v*2)/2));
+  return frac(v);
+}
+function numVal(s){
+  var m=/^(\d+)\s*分の\s*(\d+)$/.exec(s);
+  if(m)return +m[2]/+m[1];
+  m=/^(?:(\d+(?:\.\d+)?)\s*(?:と|・|\+|\s)\s*)?(\d+)\/(\d+)$/.exec(s);
+  if(m)return (m[1]?+m[1]:0)+(+m[2]/+m[3]);
+  return parseFloat(s);
+}
+var AMT_NUM='\\d+\\s*分の\\s*\\d+|\\d+/\\d+|\\d+(?:\\.\\d+)?(?:\\s*(?:と|・|\\+|\\s)\\s*\\d+/\\d+)?';
+var AMT_MEASURE='kg|キログラム|キロ|㎏|mg|㎎|g|グラム|ml|mL|ML|㎖|cc|CC|㏄|L|ℓ|リットル|カップ|cup';
+var AMT_COUNT='(?:cm|センチ)(?!厚|幅|角|長|四方|型|大|丸|高)|個|コ|本|枚|切れ|切|片|かけ|カケ|房|ふさ|袋|缶|束|把|株|玉|丁|尾|匹|杯|合|箱|粒|膳|パック|カット|節|腹|羽|枝|つまみ|つかみ|にぎり|握り|ふり|振り|滴|つ';
+var RE_AMT=new RegExp(
+  /* 計算しないもの：厚さ2cm、(1枚200g)のような1つあたりの重さ、8枚切り、10個入り */
+  '(?:厚さ|幅|長さ|直径|太さ|高さ)\\s*約?\\s*[\\d.]+\\s*(?:cm|センチ|mm|ミリ)'+
+  '|[(（]\\s*1(?:枚|切れ|個|本|尾|匹|丁|パック|袋|缶|玉|株|房)(?:あたり|当たり)?\\s*約?\\s*[\\d.]+\\s*(?:g|グラム|kg|ml|cc)?'+
+  '|\\d+(?:枚|個|本|切れ)(?:入り|入|おろし|切り)'+
+  '|((?:大さじ|小さじ|大匙|小匙|カップ|cup|大|小|中)\\s*(?:約\\s*)?)?('+AMT_NUM+')(?:\\s*[〜～~\\-－ー−、]\\s*('+AMT_NUM+'))?(\\s*(?:'+AMT_MEASURE+'|'+AMT_COUNT+')(?![A-Za-z]))?','g');
+var RE_MEASURE=new RegExp('^(?:'+AMT_MEASURE+')$');
+/* 計算した分量を印（〜）で囲んで返す。stepはtrueだと計量の単位だけ計算する（「2枚に切る」などを変えない） */
+function scaleText(s,f,step){
+  if(f===1)return s;
+  s=normWide(s);
+  if(!step){
+    s=s.replace(/(ひと|ふた)(つまみ|つかみ|にぎり|握り|かけ|カケ|房|ふさ|束|株|玉|切れ|片|パック|袋|缶|つ)/g,function(m,a,u){return (a==='ひと'?1:2)+u;})
+      .replace(/(一|二|三)(かけ|カケ|つまみ|つかみ|房|束|株|玉|切れ|片|パック|袋|缶)/g,function(m,a,u){return ('一二三'.indexOf(a)+1)+u;})
+      .replace(/半(個|本|玉|丁|袋|束|株|枚|カップ|パック|缶|切れ)/g,'1/2$1')
+      .replace(/半分$/,'1/2つ分');
+  }
+  return s.replace(RE_AMT,function(m,p,a,b,u,off,str){
+    if(!a)return m;
+    p=p||'';
+    var unit=(u||'').trim(),spoon=/さじ|匙/.test(p),measure=spoon||/カップ|cup/.test(p)||RE_MEASURE.test(unit);
+    /* 「卵 2」のように行末の数字だけのときも量とみなす */
+    var bareEnd=!p&&!unit&&off>0&&off+m.length===str.length&&/\s/.test(str.charAt(off-1));
+    if(step?!measure:!(p||unit||bareEnd))return m;
+    var v=numVal(a)*f,w=b?numVal(b)*f:0;
+    if(!isFinite(v)||!isFinite(w))return m;
+    if(spoon&&!b&&!unit)return ''+(/約/.test(p)?'約':'')+spoonText(v*(/大/.test(p)?3:1))+'';
+    return ''+p+fmtAmt(v,unit)+(b?'〜'+fmtAmt(w,unit):'')+unit+'';
+  });
+}
+/* 印を付けた文字を画面用のHTMLにする */
+function rich(t){
+  return esc(t).replace(//g,'<b class="amt">').replace(//g,'</b>').replace(//g,'<span class="mk">').replace(//g,'</span>');
+}
+/* 手順1つ分：本文の目印に色を付け、その目印の材料を下に添える */
+function stepHtml(r,info,text){
+  var f=servFactor(r),keys=[],t=scaleText(text,f,true);
+  if(info.re)t=t.replace(info.re,function(all,pre,w){
+    var k=markKey(w);k=info.alias[k]||k;
+    if(keys.indexOf(k)<0)keys.push(k);
+    return pre+''+markKey(w)+'';
+  });
+  var refs=keys.filter(function(k){return info.groups[k];}).map(function(k){
+    return '<div class="ref'+(k.length>2?' named':'')+'"><span class="mk">'+esc(k)+'</span><div class="ref-list">'+
+      info.groups[k].map(function(x){return rich(scaleText(x.text,f));}).join('<br>')+'</div></div>';
+  }).join('');
+  return {text:rich(t),refs:refs?'<div class="refs">'+refs+'</div>':''};
+}
 var checks={};/* 材料のチェック（開いている間だけ） */
-function ingList(r){
-  var c=checks[r.id]||{};
-  return '<ul class="ing">'+r.ingredients.map(function(x,i){
-    return '<li><label><input type="checkbox" data-ing="'+i+'"'+(c[i]?' checked':'')+'><span>'+esc(x)+'</span></label></li>';
+function ingList(r,info){
+  var c=checks[r.id]||{},f=servFactor(r);
+  return '<ul class="ing">'+info.rows.map(function(x){
+    if(x.head)return '<li class="ing-group">'+(x.mark?'<span class="mk">'+esc(x.mark)+'</span>':'')+'<span>'+esc(x.text)+'</span></li>';
+    return '<li'+(x.inGroup?' class="in-group"':'')+'><label><input type="checkbox" data-ing="'+x.i+'"'+(c[x.i]?' checked':'')+'><span>'+
+      (x.mark?'<span class="mk">'+esc(x.mark)+'</span>':'')+rich(scaleText(x.text,f))+'</span></label></li>';
   }).join('')+'</ul>';
+}
+function servHtml(r){
+  var b=servBase(r),v=servNow(r),atMin=b?v<=1:v===MULT[0],id=esc(r.id);
+  return '<div class="serv" role="group" aria-label="分量を変える">'+
+    '<button data-act="servdown" data-id="'+id+'" aria-label="減らす"'+(atMin?' disabled':'')+'>−</button>'+
+    '<b aria-live="polite">'+esc(servLabel(r))+'</b>'+
+    '<button data-act="servup" data-id="'+id+'" aria-label="増やす">＋</button></div>';
+}
+function servNote(r){
+  if(servFactor(r)===1)return '';
+  var b=servBase(r);
+  var from=!b?'元のレシピの量を1倍として計算しています。':(b.hi?'元のレシピは'+b.n+'〜'+b.hi+b.unit+'（'+b.n+b.unit+'として計算）。':'元のレシピは'+b.n+b.unit+'。');
+  return '<div class="serv-note"><span>'+esc(from)+'色の付いた文字が計算した分量です。少々・適量や加熱時間はそのままなので、味や火の通りを見て調整してください。</span>'+
+    '<button class="chip" data-act="servreset" data-id="'+esc(r.id)+'">元に戻す</button></div>';
 }
 
 /* ---------- 画面 ---------- */
-var state={q:'',cat:'',step:0,sheet:false,draft:null,delArmed:false};
+var state={q:'',cat:'',step:0,sheet:false,draft:null,delArmed:false,serv:{}};/* serv：変更した分量（開いている間だけ。保存はしない） */
 var app=$('#app');
 function go(h){if(location.hash===h)render();else location.hash=h;}
 function render(){
@@ -266,15 +480,16 @@ function paintList(){
 function viewRecipe(r){
   var host='';
   try{host=r.url?new URL(r.url).hostname.replace(/^www\./,''):'';}catch(e){}
-  var n=0;
+  var n=0,info=ingInfo(r);
   app.innerHTML='<div class="top"><button class="iconbtn" data-act="home" aria-label="一覧へ">‹ 一覧</button><span style="flex:1"></span>'+wakeHtml()+
     '<button class="iconbtn" data-act="edit" data-id="'+esc(r.id)+'">編集</button></div>'+
     '<div class="wrap"><div class="title">'+esc(r.title)+'</div>'+
     '<div class="meta">'+esc([r.category,r.servings].filter(Boolean).join('・'))+'</div>'+WAKE_NOTE+
-    (r.ingredients.length?'<h2 class="sec">材料</h2>'+ingList(r):'')+
+    (r.ingredients.length?'<div class="ing-top"><h2 class="sec">材料</h2>'+servHtml(r)+'</div>'+servNote(r)+ingList(r,info):'')+
     (r.steps.length?'<h2 class="sec">作り方</h2><ol class="steps">'+r.steps.map(function(s){
       if(isSection(s))return '<li class="h">'+esc(s.slice(1,-1))+'</li>';
-      n++;return '<li><span class="n">'+n+'</span><span>'+esc(s)+'</span></li>';
+      var h=stepHtml(r,info,s);
+      n++;return '<li><span class="n">'+n+'</span><div class="st-body">'+h.text+h.refs+'</div></li>';
     }).join('')+'</ol>':'')+
     (r.memo?'<h2 class="sec">メモ</h2><div class="memo">'+esc(r.memo)+'</div>':'')+
     (host?'<p class="meta">出典：<a href="'+esc(r.url)+'" target="_blank" rel="noopener">'+esc(host)+'</a></p>':'')+
@@ -285,18 +500,19 @@ function viewCook(r){
   var steps=realSteps(r);
   if(state.step>=steps.length)state.step=Math.max(0,steps.length-1);
   var i=state.step,s=steps[i]||{text:'',sec:''},last=i===steps.length-1;
+  var info=ingInfo(r),h=stepHtml(r,info,s.text),changed=servFactor(r)!==1;
   app.innerHTML='<div class="cook" id="cook" style="--scale:'+(prefs().scale||1)+'">'+
     '<div class="cook-top"><button class="iconbtn" data-act="cookclose" data-id="'+esc(r.id)+'">✕ 閉じる</button><span class="spacer"></span>'+wakeHtml()+
     '<button class="iconbtn" data-act="smaller" aria-label="文字を小さく">A−</button><button class="iconbtn" data-act="bigger" aria-label="文字を大きく">A＋</button></div>'+
     '<div class="progress"><i style="width:'+Math.round((i+1)/steps.length*100)+'%"></i></div>'+
     '<div class="cook-main" id="cook-main">'+WAKE_NOTE+
-    '<div class="cook-count">手順 '+(i+1)+' / '+steps.length+'</div>'+
+    '<div class="cook-count">手順 '+(i+1)+' / '+steps.length+(changed?'・'+esc(servLabel(r)):'')+'</div>'+
     (s.sec?'<div class="cook-sec">'+esc(s.sec)+'</div>':'')+
-    '<div class="cook-text">'+esc(s.text)+'</div></div>'+
+    '<div class="cook-text">'+h.text+'</div>'+h.refs+'</div>'+
     (r.ingredients.length?'<button class="btn cook-ing-btn" data-act="sheet">材料を見る</button>':'')+
     '<div class="cook-bar"><button class="btn" data-act="prev"'+(i===0?' disabled style="opacity:.4"':'')+'>‹ 前へ</button>'+
     '<button class="btn primary" data-act="next" data-id="'+esc(r.id)+'">'+(last?'できあがり':'次へ ›')+'</button></div>'+
-    (state.sheet?'<div class="sheet"><div class="sheet-head"><b>材料</b><button class="iconbtn" data-act="sheet">閉じる</button></div>'+ingList(r)+'</div>':'')+
+    (state.sheet?'<div class="sheet"><div class="sheet-head"><b>材料'+(changed?'（'+esc(servLabel(r))+'）':'')+'</b><button class="iconbtn" data-act="sheet">閉じる</button></div>'+ingList(r,info)+'</div>':'')+
     '</div>';
   /* 左右スワイプでも移動できるように */
   var sx=null,main=$('#cook-main');
@@ -319,7 +535,7 @@ function viewEdit(r){
     '<label class="f">料理名<input id="f-title" value="'+esc(d.title)+'"></label>'+
     '<label class="f">分量・時間 <small>例：2人分・30分</small><input id="f-servings" value="'+esc(d.servings)+'"></label>'+
     '<label class="f">分類 <small>例：主菜、汁もの（なくてもOK）</small><input id="f-category" list="catlist" value="'+esc(d.category||'')+'"><datalist id="catlist">'+cats().map(function(c){return '<option value="'+esc(c)+'">';}).join('')+'</datalist></label>'+
-    '<label class="f">材料 <small>1行に1品</small><textarea id="f-ing" rows="7">'+esc(d.ingredients.join('\n'))+'</textarea></label>'+
+    '<label class="f">材料 <small>1行に1品。☆やAの目印もそのまま書けます</small><textarea id="f-ing" rows="7">'+esc(d.ingredients.join('\n'))+'</textarea></label>'+
     '<label class="f">作り方 <small>1行に1工程（番号はいりません）</small><textarea id="f-steps" rows="9">'+esc(d.steps.join('\n'))+'</textarea></label>'+
     '<label class="f">メモ <small>自分用の覚え書き</small><textarea id="f-memo" rows="3">'+esc(d.memo||'')+'</textarea></label>'+
     '<label class="f">出典URL<input id="f-url" type="url" inputmode="url" value="'+esc(d.url||'')+'"></label>'+
@@ -345,6 +561,7 @@ function saveForm(id){
   if(!r){r={id:newId(),createdAt:now};list.push(r);}
   r.title=title;r.servings=$('#f-servings').value.trim();r.category=$('#f-category').value.trim();
   r.ingredients=lines('#f-ing');r.steps=lines('#f-steps');r.memo=$('#f-memo').value.trim();r.url=$('#f-url').value.trim();r.updatedAt=now;
+  delete state.serv[r.id];
   if(save())location.replace('#/r/'+r.id);
 }
 function viewData(){
@@ -411,6 +628,14 @@ document.addEventListener('click',function(e){
       break;
     }
     case 'sheet':state.sheet=!state.sheet;render();break;
+    case 'servup':case 'servdown':case 'servreset':{
+      /* render() は画面の先頭に戻るので、ここでは描き直しだけにする */
+      var sr=getRecipe(id);
+      if(a==='servreset')delete state.serv[id];else servStep(sr,a==='servup'?1:-1);
+      viewRecipe(sr);paintWake();
+      var fb=$('[data-act="'+a+'"]');if(fb)fb.focus();
+      break;
+    }
     case 'bigger':case 'smaller':{
       var sc=Math.min(1.6,Math.max(.7,(prefs().scale||1)+(a==='bigger'?.15:-.15)));
       setPref('scale',sc);$('#cook').style.setProperty('--scale',sc);break;

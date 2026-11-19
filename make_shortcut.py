@@ -63,6 +63,30 @@ textarea{width:100%;height:84px;border:1px solid var(--line);border-radius:10px;
 <li>ホーム画面のレシピアプリで<b class="ui">＋追加</b> → <b class="ui">コピーした文字を読み込む</b> → <b class="ui">保存</b></li>
 </ol>
 <div class="warn">共有シートに出ないときは、一覧のいちばん下の<b>アクションを編集</b>から追加できます。</div></section>
+
+<h1 id="shot" style="margin-top:28px">スクショから登録</h1>
+<p class="lead">YouTubeやInstagramの画面のスクショから、iPhoneの文字認識で文字を読み取って登録します。読み取りはiPhoneの中で行われ、画像はどこにも送られません。</p>
+
+<section><h2>1. ショートカットを作る（最初の1回だけ）</h2>
+<ol>
+<li><b class="ui">ショートカット</b>アプリで右上の<b class="ui">＋</b>を押す</li>
+<li>検索欄に <b>繰り返す</b> と入れて、<b class="ui">各項目を繰り返す</b>を選ぶ（対象は「ショートカットの入力」）</li>
+<li>検索欄に <b>テキストを抽出</b> と入れて、<b class="ui">画像からテキストを抽出</b>を選び、繰り返しの<b>中</b>に入れる（画像は「繰り返し項目」）</li>
+<li>検索欄に <b>結合</b> と入れて、<b class="ui">テキストを結合</b>を選び、繰り返しの<b>後</b>に置く（「繰り返しの結果」を<b>改行</b>で結合）</li>
+<li>続けて<b class="ui">クリップボードにコピー</b>を追加する</li>
+<li>名前を<b>スクショの文字をコピー</b>にする</li>
+<li><b class="ui">ⓘ</b>から<b class="ui">共有シートに表示</b>をオンにして、受け取るものを<b class="ui">イメージ</b>だけにする → <b class="ui">完了</b></li>
+</ol>
+<p class="note" style="margin:8px 0 0">「画像からテキストを抽出」は iOS 15 以降・iPhone XS 以降で使えます。</p></section>
+
+<section><h2>2. 使い方</h2>
+<ol>
+<li>材料や作り方が映っている画面をスクショする（何枚でも）。YouTubeは説明欄、Instagramは本文や画像のレシピのページ</li>
+<li><b class="ui">写真</b>アプリでそのスクショを選び（複数なら<b class="ui">選択</b>で順番に）、<b class="ui">共有ボタン</b> → <b class="ui">スクショの文字をコピー</b></li>
+<li>レシピアプリで<b class="ui">＋追加</b> → <b class="ui">コピーした文字を読み込む</b></li>
+<li>料理名・材料・作り方を確かめて直し、下の<b class="ui">写真を追加</b>で同じスクショを付けて<b class="ui">保存</b></li>
+</ol>
+<div class="warn">文字認識なので、読み違いや「いいね」などの画面の文字が混ざることがあります。保存の前に必ず目で確かめてください。スクショを写真として付けておけば、料理中も元の画面を見られます。</div></section>
 </main>
 <script>
 document.getElementById('copy').addEventListener('click',function(){

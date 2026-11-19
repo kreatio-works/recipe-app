@@ -104,6 +104,20 @@ textarea{resize:vertical}
 .row{display:flex;gap:10px;margin-top:20px}
 .row>*{flex:1}
 .toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:30;max-width:90vw}
+/* 写真 */
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.thumb{position:relative;width:84px;height:112px;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--soft)}
+.thumb img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.thumb button{position:absolute;top:3px;right:3px;width:30px;height:30px;border-radius:50%;border:0;background:rgba(0,0,0,.62);color:#fff;font-size:15px;padding:0}
+.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.gallery button{padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;aspect-ratio:3/4;background:var(--soft)}
+.gallery img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.viewer{position:fixed;inset:0;background:#000;z-index:40;display:flex;flex-direction:column}
+.viewer-top{display:flex;align-items:center;gap:6px;padding:calc(6px + env(safe-area-inset-top)) 8px 6px;color:#fff}
+.viewer-top .iconbtn{color:#fff}
+.viewer-top span{flex:1;text-align:center;font-size:14px}
+.viewer-body{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+.viewer-body img{display:block;width:100%;height:auto;max-width:680px;margin:0 auto}
 /* 調理モード */
 .cook{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;z-index:20;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
 .cook-top{display:flex;align-items:center;gap:6px;padding:8px 10px}
@@ -114,7 +128,8 @@ textarea{resize:vertical}
 .cook-text{font-size:calc(26px * var(--scale,1));line-height:1.7;margin-top:10px;font-weight:500}
 .cook-bar{display:grid;grid-template-columns:1fr 1.6fr;gap:10px;padding:10px 12px 14px;max-width:680px;width:100%;margin:0 auto}
 .cook-bar .btn{min-height:76px;font-size:20px}
-.cook-ing-btn{margin:0 12px;max-width:656px;align-self:center;width:calc(100% - 24px);min-height:46px}
+.cook-tools{display:flex;gap:10px;margin:0 12px;max-width:656px;align-self:center;width:calc(100% - 24px)}
+.cook-tools .btn{flex:1;min-height:46px}
 .progress{height:4px;background:var(--line)}
 .progress i{display:block;height:100%;background:var(--accent);transition:width .2s}
 .sheet{position:absolute;left:0;right:0;bottom:0;max-height:78%;overflow:auto;background:var(--card);border-radius:18px 18px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.3);padding:6px 16px calc(16px + env(safe-area-inset-bottom));z-index:2}
@@ -144,39 +159,140 @@ function getRecipe(id){return load().find(function(r){return r.id===id;});}
 function newId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(function(){});}
 
-/* ---------- 貼り付け文字の読み取り（レシピ抜き出しボタンの形式が基本） ---------- */
+/* ---------- 写真（スクショなど）。容量が大きいので IndexedDB に置く ---------- */
+var dbp=null;
+function photoDb(){
+  if(!dbp)dbp=new Promise(function(res,rej){
+    var q=indexedDB.open('recipe-photos',1);
+    q.onupgradeneeded=function(){q.result.createObjectStore('p',{keyPath:'id'});};
+    q.onsuccess=function(){res(q.result);};
+    q.onerror=function(){dbp=null;rej(q.error);};
+  });
+  return dbp;
+}
+function photoTx(mode,fn){
+  return photoDb().then(function(d){return new Promise(function(res,rej){
+    var t=d.transaction('p',mode),q=fn(t.objectStore('p'));
+    t.oncomplete=function(){res(q?q.result:undefined);};
+    t.onerror=t.onabort=function(){rej(t.error);};
+  });});
+}
+function putPhoto(id,blob){return photoTx('readwrite',function(s){return s.put({id:id,blob:blob});});}
+function getPhoto(id){return photoTx('readonly',function(s){return s.get(id);}).then(function(v){return v?v.blob:null;});}
+function delPhoto(id){return photoTx('readwrite',function(s){return s.delete(id);});}
+/* 画面を作り直すたびに前の表示用URLを捨てる */
+var shownUrls=[];
+function photoUrl(id){
+  return getPhoto(id).then(function(b){if(!b)return '';var u=URL.createObjectURL(b);shownUrls.push(u);return u;}).catch(function(){return '';});
+}
+function releaseUrls(){shownUrls.forEach(function(u){URL.revokeObjectURL(u);});shownUrls=[];}
+/* 縦長のスクショでも文字が読める大きさを残して縮める */
+function shrinkImage(file){
+  return new Promise(function(res,rej){
+    var u=URL.createObjectURL(file),im=new Image();
+    im.onload=function(){
+      var s=Math.min(1,2000/Math.max(im.naturalWidth,im.naturalHeight)),c=document.createElement('canvas');
+      c.width=Math.round(im.naturalWidth*s);c.height=Math.round(im.naturalHeight*s);
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      URL.revokeObjectURL(u);
+      c.toBlob(function(b){b?res(b):rej(new Error('toBlob'));},'image/jpeg',0.82);
+    };
+    im.onerror=function(){URL.revokeObjectURL(u);rej(new Error('decode'));};
+    im.src=u;
+  });
+}
+
+/* ---------- 貼り付け文字の読み取り ----------
+   レシピ抜き出しボタンの形式に加え、スクショの文字認識の結果（見出しなし・改行の途中切れ・
+   名前と分量の別行・画面の飾り文字）も読めるようにする */
+var QTY_RE=/(大さじ|小さじ|大匙|小匙|カップ|少々|少量|適量|適宜|ひとつまみ|ひとかけ|お好みで|[0-9½¼¾⅓⅔]+(?:[.\/][0-9]+)?\s*(?:kg|g|ml|mL|cc|l|L|個|本|枚|片|かけ|切れ|株|束|袋|缶|パック|丁|玉|房|尾|杯|合|粒|cm|匹|膳|つ|人分))/;
+var QTY_G=new RegExp(QTY_RE.source,'g');
+var STEP_NUM=/^(?:step\s*|ステップ\s*|手順\s*)?[0-9０-９]{1,2}\s*[.．、:：)）]\s*|^[（(][0-9０-９]{1,2}[)）]\s*|^[①-⑳]\s*|^[0-9]{1,2}\s+(?=[^0-9a-zA-Z\s])/i;
+/* SNSやアプリの画面に出る、レシピではない文字 */
+var NOISE_RE=/^(\d{1,2}:\d{2}(\s.*)?|.{0,8}(LTE|5G|4G|Wi-?Fi).{0,8}|.*いいね[！!]?.{0,12}|フォロー(中|する)?|メッセージ|コメント.{0,20}|返信|共有|シェア|保存|リミックス|もっと見る|続きを読む|…|\.{3}|翻訳を見る|オリジナル音源.*|チャンネル登録.*|登録者.*|高評価|低評価|再生回数.*|[0-9.,]+\s*(万|千|K|M)(\s*(回視聴|件|人))?|[0-9.,]+\s*(回視聴|件のコメント)|#\S+(\s*#\S+)*|@\S+)$/i;
+var ING_HEAD=/^(.{0,30}の)?(材料|食材|ingredients?)\s*[】\]〉》>＞]?\s*([（(]?\s*([0-9０-９〜~\-]+\s*(人分|人前|個分|枚分|本分))\s*[)）]?|[（(](.*)[)）])?$/i;
+var STEP_HEAD=/^(.{0,30}の)?(作り方|つくり方|作りかた|つくりかた|手順|工程|directions?|instructions?|how to make)\s*[】\]〉》>＞]?$/i;
+function hz(s){return String(s).replace(/[０-９Ａ-Ｚａ-ｚ．／]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0);});}
+function isQtyOnly(s){
+  var h=hz(s);
+  if(!QTY_RE.test(h))return false;
+  return h.replace(QTY_G,'').replace(/[0-9½¼¾⅓⅔\s()（）～〜\-+・\/、,.強弱]/g,'').length===0;
+}
+function isServings(s){return /^[0-9０-９〜~\-]+\s*(人分|人前)$/.test(hz(s).trim());}
 function parseRecipe(text){
   var r={title:'',servings:'',ingredients:[],steps:[],url:'',memo:''};
-  var mode='head',head=[];
+  var L=[];
   String(text||'').replace(/\r\n?/g,'\n').split('\n').forEach(function(raw){
-    var l=raw.replace(/[\s　]+$/,'').replace(/^[\s　]+/,'');
+    var l=raw.replace(/^[\s　]+|[\s　]+$/g,'');
     if(!l)return;
     var src=/^(?:出典|URL|url|引用元)[：:]?\s*(https?:\/\/\S+)/.exec(l);
     if(src){r.url=src[1];return;}
     if(/^https?:\/\/\S+$/.test(l)){if(!r.url)r.url=l;return;}
-    var bare=l.replace(/^[■□●○◆◇▼▽★☆【\[〈《]\s*/,'').replace(/\s*[】\]〉》：:]\s*$/,'');
-    if(/^(.{0,30}の)?(材料|食材|ingredients?)(\s*[（(].*[)）])?$/i.test(bare)){
-      var y=/[（(](.*)[)）]/.exec(bare);if(y&&!r.servings)r.servings=y[1];
-      mode='ing';return;
+    if(NOISE_RE.test(l)||!/[ぁ-ゖァ-ヺ一-龠々a-zA-Z0-9０-９]/.test(l))return;
+    L.push(l);
+  });
+
+  function addIng(l){
+    /* ●☆Aなどは目印のこともあるので残す。全行についているだけなら表示のときに無視する */
+    var t=l.replace(/^[・･\-*•]\s*/,'');
+    if(!t)return;
+    if(isServings(t)){if(!r.servings)r.servings=t;return;}
+    var last=r.ingredients.length-1;
+    /* 文字認識で名前と分量が別の行になったものは、前の材料につなげる */
+    if(last>=0&&isQtyOnly(t)&&!QTY_RE.test(hz(r.ingredients[last]))){r.ingredients[last]+=' '+t;return;}
+    r.ingredients.push(t);
+  }
+  var numbered=false,pendingNum=false;
+  function addStep(l){
+    if(/^〈.*〉$/.test(l)){r.steps.push(l);return;}
+    if(/^[0-9０-９]{1,2}$/.test(l)){pendingNum=true;return;}/* 番号だけの行 */
+    var m=STEP_NUM.exec(l),body=m?l.slice(m[0].length):l;
+    if(m)numbered=true;
+    var last=r.steps.length-1,prev=last>=0?r.steps[last]:'';
+    /* 改行で途中切れした文は前の工程につなげる */
+    var cont=!m&&!pendingNum&&last>=0&&!/^〈/.test(prev)&&(numbered||(prev.length>=12&&!/[。！!？?）)」]$/.test(prev)));
+    pendingNum=false;
+    if(!body)return;
+    if(cont)r.steps[last]+=body;else r.steps.push(body);
+  }
+
+  var mode='head',head=[],headers=false;
+  L.forEach(function(l){
+    var bare=l.replace(/^[■□●○◆◇▼▽★☆【\[〈《<＜]\s*/,'').replace(/\s*[】\]〉》>＞：:]\s*$/,'');
+    var ih=ING_HEAD.exec(bare);
+    if(ih){var sv=ih[4]||ih[6];if(sv&&!r.servings)r.servings=sv.trim();mode='ing';headers=true;return;}
+    if(STEP_HEAD.test(bare)){mode='step';headers=true;return;}
+    if(/^(メモ|ポイント|コツ|point|tips?)$/i.test(bare)){mode='memo';return;}
+    if(mode==='head')head.push(l);
+    else if(mode==='ing'){
+      /* 「作り方」の見出しがないまま工程に入ったら切り替える */
+      if((l.length>28&&/。/.test(l))||(STEP_NUM.test(l)&&l.length>14&&!isQtyOnly(l.replace(STEP_NUM,'')))){mode='step';addStep(l);}
+      else addIng(l);
     }
-    if(/^(.{0,30}の)?(作り方|つくり方|作りかた|手順|工程|directions?|instructions?)$/i.test(bare)){mode='step';return;}
-    if(/^(メモ|ポイント|コツ)$/.test(bare)){mode='memo';return;}
-    if(mode==='head'){head.push(l);}
-    /* ●は目印のこともあるので残す。全行についているだけなら表示のときに無視する */
-    else if(mode==='ing'){var i=l.replace(/^[・･\-*•]\s*/,'');if(i)r.ingredients.push(i);}
-    else if(mode==='step'){
-      var s=/^〈.*〉$/.test(l)?l:l.replace(/^(?:step\s*)?[0-9０-９]+\s*[.．、:：)）]\s*/i,'').replace(/^[（(][0-9０-９]+[)）]\s*/,'').replace(/^[①-⑳]\s*/,'');
-      if(s)r.steps.push(s);
-    }
+    else if(mode==='step')addStep(l);
     else r.memo+=(r.memo?'\n':'')+l;
   });
-  if(head.length){
-    var m=/^(.*?)[（(]([^（）()]*)[)）]$/.exec(head[0]);
-    if(m&&m[1]){r.title=m[1].trim();if(!r.servings)r.servings=m[2];}
-    else r.title=head[0];
-    /* 見出しが何もない文章は、残りを作り方として受ける */
-    if(mode==='head')r.steps=head.slice(1);
+
+  if(headers){
+    if(head.length){r.title=head[0];if(head.length>1)r.memo=head.slice(1).join('\n')+(r.memo?'\n'+r.memo:'');}
+  }else{
+    /* 見出しが一つもない文字（スクショなど）は、1行ずつ材料か工程かを見分ける */
+    var i=0;
+    for(;i<head.length;i++){
+      var c=head[i];
+      if(!QTY_RE.test(hz(c))&&!STEP_NUM.test(c)&&c.length<=40){r.title=c;i++;break;}
+    }
+    for(;i<head.length;i++){
+      var l=head[i],next=head[i+1]||'';
+      if(isServings(l)){if(!r.servings)r.servings=l;continue;}
+      var isStep=STEP_NUM.test(l)||/^[0-9０-９]{1,2}$/.test(l)||l.length>30||/。$/.test(l);
+      if(!isStep&&!r.steps.length&&(QTY_RE.test(hz(l))||(next&&isQtyOnly(next)))){addIng(l);continue;}
+      if(isStep||r.ingredients.length||r.steps.length){addStep(l);continue;}
+      r.memo+=(r.memo?'\n':'')+l;
+    }
   }
+  var m=/^(.*?)\s*[（(]([^（）()]*)[)）]$/.exec(r.title);
+  if(m&&m[1]){r.title=m[1].trim();if(!r.servings)r.servings=m[2];}
   return r;
 }
 
@@ -437,6 +553,7 @@ function render(){
   var h=location.hash.replace(/^#/,'')||'/',p=h.split('/').filter(Boolean);
   var inRecipe=p[0]==='r'&&getRecipe(p[1]);
   if(inRecipe&&wakeWanted())Wake.start();else Wake.stop();
+  closeViewer();releaseUrls();
   if(p[0]==='new')viewEdit(null);
   else if(p[0]==='edit'&&getRecipe(p[1]))viewEdit(getRecipe(p[1]));
   else if(p[0]==='r'&&inRecipe&&p[2]==='cook')viewCook(inRecipe);
@@ -456,7 +573,7 @@ function viewList(){
     '<div class="wrap">'+
     (all.length?'<input class="search" id="q" type="search" placeholder="料理名・材料でさがす" aria-label="さがす" value="'+esc(state.q)+'">'+
       '<div class="chips" id="chips"></div><div class="list" id="list"></div>'
-    :'<div class="empty"><h2>まだレシピがありません</h2>「レシピ抜き出し」でコピーした文字を貼り付けるだけで追加できます。<br><a href="shortcut.html">iPhoneで抜き出せるようにする</a></div>')+
+    :'<div class="empty"><h2>まだレシピがありません</h2>「レシピ抜き出し」でコピーした文字を貼り付けるだけで追加できます。<br><a href="shortcut.html">iPhoneで抜き出せるようにする</a><br><a href="shortcut.html#shot">スクショから登録する</a></div>')+
     '</div><button class="fab" data-act="new">＋ 追加</button>';
   if(all.length){paintList();$('#q').addEventListener('input',function(e){state.q=e.target.value;paintList();});}
 }
@@ -492,10 +609,35 @@ function viewRecipe(r){
       n++;return '<li><span class="n">'+n+'</span><div class="st-body">'+h.text+h.refs+'</div></li>';
     }).join('')+'</ol>':'')+
     (r.memo?'<h2 class="sec">メモ</h2><div class="memo">'+esc(r.memo)+'</div>':'')+
+    ((r.photos||[]).length?'<h2 class="sec">写真</h2><div class="gallery" id="gal">'+r.photos.map(function(pid,k){
+      return '<button data-act="viewphoto" data-id="'+esc(r.id)+'" data-i="'+k+'" aria-label="写真'+(k+1)+'を大きく見る"><img alt="" data-pid="'+esc(pid)+'"></button>';
+    }).join('')+'</div>':'')+
     (host?'<p class="meta">出典：<a href="'+esc(r.url)+'" target="_blank" rel="noopener">'+esc(host)+'</a></p>':'')+
     '</div>'+
     (realSteps(r).length?'<div class="bottombar"><button class="btn primary wide" data-act="cook" data-id="'+esc(r.id)+'">大きな文字で作る</button></div>':'');
+  fillPhotos();
 }
+function fillPhotos(){
+  [].forEach.call(document.querySelectorAll('img[data-pid]'),function(im){
+    photoUrl(im.getAttribute('data-pid')).then(function(u){if(u)im.src=u;});
+  });
+}
+/* 写真を全画面で見る（縦長のスクショはそのまま縦にスクロール） */
+var viewer=null;
+function openViewer(r,i){
+  closeViewer();
+  var ids=r.photos||[];if(!ids.length)return;
+  i=Math.max(0,Math.min(i,ids.length-1));
+  var v=document.createElement('div');v.className='viewer';v.setAttribute('role','dialog');v.setAttribute('aria-label','写真');
+  v.innerHTML='<div class="viewer-top"><button class="iconbtn" data-act="vclose">✕ 閉じる</button><span>'+(i+1)+' / '+ids.length+'</span>'+
+    (ids.length>1?'<button class="iconbtn" data-act="vmove" data-id="'+esc(r.id)+'" data-i="'+(i-1)+'"'+(i===0?' disabled style="opacity:.35"':'')+'>‹ 前</button>'+
+      '<button class="iconbtn" data-act="vmove" data-id="'+esc(r.id)+'" data-i="'+(i+1)+'"'+(i===ids.length-1?' disabled style="opacity:.35"':'')+'>次 ›</button>':'')+
+    '</div><div class="viewer-body"><img alt="写真'+(i+1)+'" data-pid="'+esc(ids[i])+'"></div>';
+  document.body.appendChild(v);viewer=v;
+  var im=v.querySelector('img');
+  photoUrl(ids[i]).then(function(u){if(u)im.src=u;else im.alt='写真を読み込めませんでした';});
+}
+function closeViewer(){if(viewer){viewer.remove();viewer=null;}}
 function viewCook(r){
   var steps=realSteps(r);
   if(state.step>=steps.length)state.step=Math.max(0,steps.length-1);
@@ -509,7 +651,10 @@ function viewCook(r){
     '<div class="cook-count">手順 '+(i+1)+' / '+steps.length+(changed?'・'+esc(servLabel(r)):'')+'</div>'+
     (s.sec?'<div class="cook-sec">'+esc(s.sec)+'</div>':'')+
     '<div class="cook-text">'+h.text+'</div>'+h.refs+'</div>'+
-    (r.ingredients.length?'<button class="btn cook-ing-btn" data-act="sheet">材料を見る</button>':'')+
+    (r.ingredients.length||(r.photos||[]).length?'<div class="cook-tools">'+
+      (r.ingredients.length?'<button class="btn" data-act="sheet">材料を見る</button>':'')+
+      ((r.photos||[]).length?'<button class="btn" data-act="viewphoto" data-id="'+esc(r.id)+'" data-i="0">写真を見る</button>':'')+
+    '</div>':'')+
     '<div class="cook-bar"><button class="btn" data-act="prev"'+(i===0?' disabled style="opacity:.4"':'')+'>‹ 前へ</button>'+
     '<button class="btn primary" data-act="next" data-id="'+esc(r.id)+'">'+(last?'できあがり':'次へ ›')+'</button></div>'+
     (state.sheet?'<div class="sheet"><div class="sheet-head"><b>材料'+(changed?'（'+esc(servLabel(r))+'）':'')+'</b><button class="iconbtn" data-act="sheet">閉じる</button></div>'+ingList(r,info)+'</div>':'')+
@@ -539,11 +684,38 @@ function viewEdit(r){
     '<label class="f">作り方 <small>1行に1工程（番号はいりません）</small><textarea id="f-steps" rows="9">'+esc(d.steps.join('\n'))+'</textarea></label>'+
     '<label class="f">メモ <small>自分用の覚え書き</small><textarea id="f-memo" rows="3">'+esc(d.memo||'')+'</textarea></label>'+
     '<label class="f">出典URL<input id="f-url" type="url" inputmode="url" value="'+esc(d.url||'')+'"></label>'+
+    '<div class="f" style="margin-top:16px;font-weight:600;font-size:14px">写真 <small style="font-weight:400;color:var(--sub)">スクショなど。料理中に見返せます</small></div>'+
+    '<div class="thumbs" id="thumbs"></div>'+
+    '<div class="row" style="margin-top:10px"><button class="btn" data-act="addphoto">写真を追加</button></div>'+
+    '<input id="photoin" type="file" accept="image/*" multiple hidden>'+
     '<div class="row"><button class="btn primary" data-act="save"'+(r?' data-id="'+esc(r.id)+'"':'')+'>保存</button></div>'+
     (r?'<div class="row"><button class="btn danger" data-act="del" data-id="'+esc(r.id)+'">このレシピを削除</button></div>':'')+
     '</div>';
   var pa=$('#paste');
   if(pa)pa.addEventListener('input',function(){if(pa.value.trim())applyPaste(pa.value);});
+  /* 編集中の写真：既存は id だけ、新しく選んだものは縮めた画像を持つ */
+  state.ph=(r&&r.photos||[]).map(function(pid){return {id:pid};});state.phBusy=null;
+  paintThumbs();
+  $('#photoin').addEventListener('change',function(e){
+    var files=[].slice.call(e.target.files||[]);e.target.value='';
+    if(!files.length)return;
+    toast('写真を準備しています…');
+    /* 準備中に保存が押されても取りこぼさないよう、保存側はこれを待つ */
+    state.phBusy=files.reduce(function(p,f){
+      return p.then(function(){return shrinkImage(f).then(function(b){state.ph.push({id:'ph'+newId(),blob:b});paintThumbs();}).catch(function(){toast('読み込めない画像がありました');});});
+    },state.phBusy||Promise.resolve());
+  });
+}
+function paintThumbs(){
+  var box=$('#thumbs');if(!box)return;
+  box.innerHTML=state.ph.map(function(p,k){
+    return '<div class="thumb"><img alt="写真'+(k+1)+'"><button data-act="rmphoto" data-i="'+k+'" aria-label="写真'+(k+1)+'を外す">✕</button></div>';
+  }).join('');
+  [].forEach.call(box.querySelectorAll('img'),function(im,k){
+    var p=state.ph[k];
+    if(p.blob){var u=URL.createObjectURL(p.blob);shownUrls.push(u);im.src=u;}
+    else photoUrl(p.id).then(function(u){if(u)im.src=u;});
+  });
 }
 function applyPaste(text){
   var d=parseRecipe(text);
@@ -557,12 +729,27 @@ function lines(id){return $(id).value.split('\n').map(function(s){return s.trim(
 function saveForm(id){
   var title=$('#f-title').value.trim();
   if(!title){toast('料理名を入れてください');$('#f-title').focus();return;}
+  /* 写真の書き込み中に2回押されて2件できないように */
+  var sb=$('[data-act=save]');if(sb.disabled)return;sb.disabled=true;sb.textContent='保存しています…';
   var list=load(),r=id?getRecipe(id):null,now=Date.now();
   if(!r){r={id:newId(),createdAt:now};list.push(r);}
   r.title=title;r.servings=$('#f-servings').value.trim();r.category=$('#f-category').value.trim();
   r.ingredients=lines('#f-ing');r.steps=lines('#f-steps');r.memo=$('#f-memo').value.trim();r.url=$('#f-url').value.trim();r.updatedAt=now;
   delete state.serv[r.id];
-  if(save())location.replace('#/r/'+r.id);
+  /* 写真：準備中のものを待ち、新しいものを書き込み、外したものを消してから保存する */
+  var keep,gone;
+  (state.phBusy||Promise.resolve()).then(function(){
+    keep=state.ph.map(function(p){return p.id;});gone=(r.photos||[]).filter(function(x){return keep.indexOf(x)<0;});
+    return Promise.all(state.ph.filter(function(p){return p.blob;}).map(function(p){return putPhoto(p.id,p.blob);}));
+  }).then(function(){
+    r.photos=keep;
+    gone.forEach(function(x){delPhoto(x).catch(function(){});});
+    if(save())location.replace('#/r/'+r.id);
+  }).catch(function(){
+    toast('写真を保存できませんでした。空き容量を確認してください');
+    if(!id){mem=load().filter(function(x){return x!==r;});}
+    sb.disabled=false;sb.textContent='保存';
+  });
 }
 function viewData(){
   var n=load().length;
@@ -572,30 +759,43 @@ function viewData(){
     '<div class="row"><button class="btn" data-act="import">ファイルから読み込む</button></div>'+
     '<input id="imp" type="file" accept=".json,application/json" hidden>'+
     '<p class="meta">読み込みは今のレシピに足されます。同じレシピは新しい内容で上書きされます。</p>'+
-    '<h2 class="sec">レシピの取り込み</h2><p><a href="shortcut.html">iPhoneで抜き出せるようにする設定</a></p></div>';
+    '<h2 class="sec">レシピの取り込み</h2><p><a href="shortcut.html">iPhoneで抜き出せるようにする設定</a><br><a href="shortcut.html#shot">スクショから登録する設定</a></p></div>';
   $('#imp').addEventListener('change',function(e){
     var f=e.target.files[0];if(!f)return;
     var rd=new FileReader();
     rd.onload=function(){
-      try{
-        var data=JSON.parse(rd.result),arr=Array.isArray(data)?data:data.recipes,list=load(),added=0;
-        if(!Array.isArray(arr))throw 0;
-        arr.forEach(function(x){
-          if(!x||!x.title)return;
-          x.id=x.id||newId();x.ingredients=x.ingredients||[];x.steps=x.steps||[];
-          var i=list.findIndex(function(y){return y.id===x.id;});
-          if(i>=0)list[i]=x;else list.push(x);
-          added++;
-        });
-        save();toast(added+'件読み込みました');viewData();
-      }catch(err){toast('このファイルは読み込めませんでした');}
+      var data,arr;
+      try{data=JSON.parse(rd.result);arr=Array.isArray(data)?data:data.recipes;if(!Array.isArray(arr))throw 0;}
+      catch(err){toast('このファイルは読み込めませんでした');return;}
+      var list=load(),added=0,photos=(data&&data.photos)||{};
+      arr.forEach(function(x){
+        if(!x||!x.title)return;
+        x.id=x.id||newId();x.ingredients=x.ingredients||[];x.steps=x.steps||[];
+        x.photos=(x.photos||[]).filter(function(pid){return photos[pid];});
+        var i=list.findIndex(function(y){return y.id===x.id;});
+        if(i>=0)list[i]=x;else list.push(x);
+        added++;
+      });
+      /* 写真は data URL で入っているので画像に戻して書き込む */
+      Promise.all(Object.keys(photos).map(function(pid){
+        return fetch(photos[pid]).then(function(res){return res.blob();}).then(function(b){return putPhoto(pid,b);}).catch(function(){});
+      })).then(function(){save();toast(added+'件読み込みました');viewData();});
     };
     rd.readAsText(f);
   });
 }
+function blobToDataUrl(b){return new Promise(function(res){var f=new FileReader();f.onload=function(){res(f.result);};f.onerror=function(){res('');};f.readAsDataURL(b);});}
 function exportData(){
+  /* 写真も一緒に1つのファイルへ入れる */
+  var ids=[];load().forEach(function(r){(r.photos||[]).forEach(function(p){ids.push(p);});});
+  var photos={};
+  Promise.all(ids.map(function(pid){
+    return getPhoto(pid).then(function(b){return b?blobToDataUrl(b):'';}).then(function(u){if(u)photos[pid]=u;}).catch(function(){});
+  })).then(function(){shareExport(photos);});
+}
+function shareExport(photos){
   var d=new Date(),name='recipes_'+d.getFullYear()+('0'+(d.getMonth()+1)).slice(-2)+('0'+d.getDate()).slice(-2)+'.json';
-  var blob=new Blob([JSON.stringify({version:1,recipes:load()},null,1)],{type:'application/json'});
+  var blob=new Blob([JSON.stringify({version:2,recipes:load(),photos:photos})],{type:'application/json'});
   var file=null;try{file=new File([blob],name,{type:'application/json'});}catch(e){}
   /* スマホは共有メニューの方が保存先を選びやすい */
   if(file&&navigator.canShare&&navigator.canShare({files:[file]})){
@@ -656,8 +856,13 @@ document.addEventListener('click',function(e){
     case 'del':
       if(!state.delArmed){state.delArmed=true;b.textContent='もう一度押すと削除します';break;}
       state.delArmed=false;
+      (getRecipe(id).photos||[]).forEach(function(x){delPhoto(x).catch(function(){});});
       mem=load().filter(function(r){return r.id!==id;});save();toast('削除しました');location.replace('#/');
       break;
+    case 'addphoto':$('#photoin').click();break;
+    case 'rmphoto':state.ph.splice(+b.getAttribute('data-i'),1);paintThumbs();break;
+    case 'viewphoto':case 'vmove':openViewer(getRecipe(id),+b.getAttribute('data-i'));break;
+    case 'vclose':closeViewer();break;
     case 'export':exportData();break;
     case 'import':$('#imp').click();break;
   }
